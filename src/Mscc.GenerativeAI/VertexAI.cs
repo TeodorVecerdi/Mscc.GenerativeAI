@@ -24,13 +24,20 @@ namespace Mscc.GenerativeAI
         private readonly bool _isExpressMode = false;
 
         private string _endpointId;
+        private string? _customUrl;
 
         public string EndpointId
         {
             get => _endpointId;
             set => _endpointId = value.SanitizeEndpointName();
         }
-        
+
+        public string? CustomUrl
+        {
+            get => _customUrl;
+            set => _customUrl = value;
+        }
+
         /// <summary>
         /// Initializes a new instance of the <see cref="VertexAI"/> class with access to Vertex AI Gemini API.
         /// The default constructor attempts to read <c>.env</c> file and environment variables.
@@ -78,6 +85,20 @@ namespace Mscc.GenerativeAI
         /// <summary>
         /// Initializes a new instance of the <see cref="VertexAI"/> class with access to Vertex AI Gemini API.
         /// </summary>
+        /// <param name="customUrlOptions">Options to use</param>
+        /// <param name="logger">Optional. Logger instance used for logging</param>
+        public VertexAI(VertexAICustomUrl customUrlOptions, ILogger? logger = null) : this(logger)
+        {
+            _projectId = customUrlOptions.ProjectId;
+            _region = customUrlOptions.Region ?? _region;
+            _customUrl = customUrlOptions.Url;
+            _apiKey = customUrlOptions.ApiKey;
+            _version = ApiVersion.V1;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="VertexAI"/> class with access to Vertex AI Gemini API.
+        /// </summary>
         /// <param name="apiKey">API key for Vertex AI in express mode.</param>
         /// <param name="apiVersion">Version of the API.</param>
         /// <param name="logger">Optional. Logger instance used for logging.</param>
@@ -119,6 +140,20 @@ namespace Mscc.GenerativeAI
                     tools,
                     systemInstruction,
                     vertexAi: true, 
+                    logger: logger);
+            }
+
+            if (_customUrl is not null)
+            {
+                return new GenerativeModel(_projectId,
+                    _region,
+                    model,
+                    _apiKey,
+                    _customUrl,
+                    generationConfig,
+                    safetySettings,
+                    tools,
+                    systemInstruction,
                     logger: logger);
             }
 

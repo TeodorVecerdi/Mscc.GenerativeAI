@@ -19,6 +19,7 @@ namespace Mscc.GenerativeAI
     {
         private const string UrlGoogleAi = "{BaseUrlGoogleAi}/{model}:{method}";
         private const string UrlVertexAi = "{BaseUrlVertexAi}/publishers/{publisher}/{model}:{method}";
+        private const string UrlVertexAiCustom = "{CustomBaseUrl}/{version}/projects/{projectId}/locations/{region}/publishers/{publisher}/{model}:{method}";
         private const string UrlVertexAiExpress = "https://aiplatform.googleapis.com/{version}/publishers/{publisher}/{model}:{method}";
 
         private readonly bool _useVertexAi;
@@ -45,6 +46,11 @@ namespace Mscc.GenerativeAI
                 if (_useVertexAi)
                 {
                     url = UrlVertexAi;
+                    if (!string.IsNullOrEmpty(_customUrlVertexAi))
+                    {
+                        url = UrlVertexAiCustom;
+                    }
+
                     if (!string.IsNullOrEmpty(_endpointId))
                     {
                         url = "{BaseUrlVertexAi}/{endpointId}";
@@ -117,9 +123,11 @@ namespace Mscc.GenerativeAI
                 {
                     if (!string.IsNullOrEmpty(_endpointId))
                         return GenerativeAI.Method.GenerateContent;
+                    if (!string.IsNullOrEmpty(_customUrlVertexAi))
+                        return GenerativeAI.Method.GenerateContent;
                     if (_useVertexAiExpress)
                         return GenerativeAI.Method.GenerateContent;
-                    
+
                     return GenerativeAI.Method.StreamGenerateContent;
                 }
 
@@ -143,9 +151,11 @@ namespace Mscc.GenerativeAI
                     _ => _useVertexAi
                         ? (!string.IsNullOrEmpty(_endpointId)
                             ? GenerativeAI.Method.GenerateContent
-                            : (_useVertexAiExpress)
+                            : !string.IsNullOrEmpty(_customUrlVertexAi)
                                 ? GenerativeAI.Method.GenerateContent
-                                : GenerativeAI.Method.StreamGenerateContent)
+                                : _useVertexAiExpress
+                                    ? GenerativeAI.Method.GenerateContent
+                                    : GenerativeAI.Method.StreamGenerateContent)
                         : GenerativeAI.Method.GenerateContent
                 };
 #endif
@@ -273,6 +283,41 @@ namespace Mscc.GenerativeAI
 
             _useVertexAi = true;
             _endpointId = endpoint.SanitizeEndpointName();
+            _generationConfig = generationConfig;
+            _safetySettings = safetySettings;
+            _tools = tools;
+            _toolConfig = toolConfig;
+            _systemInstruction = systemInstruction;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="GenerativeModel"/> class with access to Vertex AI Gemini API.
+        /// </summary>
+        /// <param name="projectId">Identifier of the Google Cloud project</param>
+        /// <param name="region">Region to use</param>
+        /// <param name="model">Model to use</param>
+        /// <param name="apiKey">Api key to use</param>
+        /// <param name="customUrl">Optional. Custom base URL to use.</param>
+        /// <param name="generationConfig">Optional. Configuration options for model generation and outputs.</param>
+        /// <param name="safetySettings">Optional. A list of unique SafetySetting instances for blocking unsafe content.</param>
+        /// <param name="tools">Optional. A list of Tools the model may use to generate the next response.</param>
+        /// <param name="systemInstruction">Optional. </param>
+        /// <param name="toolConfig">Optional. Configuration of tools.</param>
+        /// <param name="logger">Optional. Logger instance used for logging</param>
+        internal GenerativeModel(string? projectId = null, string? region = null,
+            string? model = null, string? apiKey = null, string? customUrl = null,
+            GenerationConfig? generationConfig = null,
+            List<SafetySetting>? safetySettings = null,
+            List<Tool>? tools = null,
+            Content? systemInstruction = null,
+            ToolConfig? toolConfig = null,
+            ILogger? logger = null) : base(projectId, region, model, logger)
+        {
+            Logger.LogGenerativeModelInvoking();
+
+            _useVertexAi = true;
+            _customUrlVertexAi = customUrl;
+            ApiKey = apiKey ?? _apiKey;
             _generationConfig = generationConfig;
             _safetySettings = safetySettings;
             _tools = tools;

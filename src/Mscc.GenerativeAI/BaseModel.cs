@@ -34,6 +34,7 @@ namespace Mscc.GenerativeAI
         protected string? _projectId;
         protected string _region = "us-central1";
         protected string? _endpointId;
+        protected string? _customUrlVertexAi;
 
 #if NET472_OR_GREATER || NETSTANDARD2_0
         protected static readonly Version _httpVersion = HttpVersion.Version11;
@@ -93,10 +94,12 @@ namespace Mscc.GenerativeAI
             if (!string.IsNullOrEmpty(_apiKey))
             {
                 if (request.Headers.Contains("x-goog-api-key"))
-                {
                     request.Headers.Remove("x-goog-api-key");
-                }
                 request.Headers.Add("x-goog-api-key", _apiKey);
+
+                if (request.Headers.Contains("x-api-key"))
+                    request.Headers.Remove("x-api-key");
+                request.Headers.Add("x-api-key", _apiKey);
             }
         }
 
@@ -244,6 +247,7 @@ namespace Mscc.GenerativeAI
                 {
                     { "BaseUrlGoogleAi", BaseUrlGoogleAi },
                     { "BaseUrlVertexAi", BaseUrlVertexAi },
+                    { "CustomBaseUrl", _customUrlVertexAi },
                     { "version", Version },
                     { "model", _model },
                     { "modelsId", _model },
@@ -468,6 +472,7 @@ namespace Mscc.GenerativeAI
             CancellationToken cancellationToken = default,
             HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
         {
+            Console.WriteLine($"Sending request: {request.Method} {request.RequestUri}");
             // Add auth headers specific to this request
             AddApiKeyHeader(request);
             AddAccessTokenHeader(request);
