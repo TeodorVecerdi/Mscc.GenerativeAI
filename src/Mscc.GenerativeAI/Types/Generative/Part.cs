@@ -34,7 +34,7 @@ namespace Mscc.GenerativeAI
         /// <summary>
         /// A text part of a conversation with the model.
         /// </summary>
-        public string Text
+        public string? Text
         {
             get
             {
@@ -43,32 +43,32 @@ namespace Mscc.GenerativeAI
                 if (string.IsNullOrEmpty(value)) { value = CodeExecutionResult?.Output;}
                 return value!;
             }
-            set { TextData = new TextData { Text = value }; }
+            set { TextData = new TextData { Text = value! }; }
         }
 
         /// <remarks/>
         [DebuggerHidden]
-        internal TextData TextData { get; set; }
+        internal TextData? TextData { get; set; }
 
         /// <summary>
         /// Raw media bytes sent directly in the request. 
         /// </summary>
-        public InlineData InlineData { get; set; }
+        public InlineData? InlineData { get; set; }
 
         /// <summary>
         /// URI based data.
         /// </summary>
-        public FileData FileData { get; set; }
+        public FileData? FileData { get; set; }
 
         /// <summary>
         /// The result output of a FunctionCall that contains a string representing the FunctionDeclaration.name and a structured JSON object containing any output from the function is used as context to the model.
         /// </summary>
-        public FunctionResponse FunctionResponse { get; set; }
+        public FunctionResponse? FunctionResponse { get; set; }
 
         /// <summary>
         /// A predicted FunctionCall returned from the model that contains a string representing the FunctionDeclaration.name with the arguments and their values.
         /// </summary>
-        public FunctionCall FunctionCall { get; set; }
+        public FunctionCall? FunctionCall { get; set; }
 
         /// <summary>
         /// Optional. For video input, the start and end offset of the video in Duration format.

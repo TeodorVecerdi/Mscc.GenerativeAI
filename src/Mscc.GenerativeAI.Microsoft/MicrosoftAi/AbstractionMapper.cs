@@ -3,7 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 #endif
+using Json.Schema;
 using System.Text;
+using System.Text.Json;
 using mea = Microsoft.Extensions.AI;
 
 namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
@@ -41,6 +43,8 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
 
                 c.Role = message.Role == mea.ChatRole.Assistant ? "model" : "user";
 
+                Dictionary<string, string> functionNames = new();
+
                 foreach (var content in message.Contents)
                 {
                     switch (content)
@@ -55,10 +59,19 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
 
                         case mea.FunctionCallContent fcc:
                             c.Parts.Add(new FunctionCall() { Id = fcc.CallId, Name = fcc.Name, Args = fcc.Arguments });
+                            functionNames[fcc.CallId] = fcc.Name;
+                            Console.WriteLine($"Added function call with ID {fcc.CallId}: {fcc.Name}");
                             break;
 
                         case mea.FunctionResultContent frc:
-                            c.Parts.Add(new FunctionResponse() { Id = frc.CallId, Response = frc.Result });
+                            string functionName = frc.CallId;
+                            if (functionNames.TryGetValue(frc.CallId, out var name))
+                            {
+                                functionName = name;
+                                Console.WriteLine($"Found function name for call ID {frc.CallId}: {functionName}");
+                            }
+                            c.Parts.Add(new FunctionResponse() { Id = frc.CallId, Name = functionName, Response = frc.Result });
+                            Console.WriteLine($"Added function response with ID {frc.CallId}: {functionName}, {frc.Result}");
                             break;
                     }
                 }
@@ -96,6 +109,35 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
                         request.GenerationConfig.ResponseSchema = jsonFormat.Schema;
                 }
 
+                if (options.AdditionalProperties?.Any() is true)
+                {
+                    if (options.AdditionalProperties.TryGetValue("ThinkingConfig", out var thinkingConfig) && thinkingConfig is IReadOnlyDictionary<string, object> thinkingConfigDict)
+                    {
+                        request.GenerationConfig.ThinkingConfig ??= new ThinkingConfig();
+                        if (thinkingConfigDict.TryGetValue("IncludeThoughts", out var includeThoughts))
+                        {
+                            if (includeThoughts is bool b)
+                            {
+                                request.GenerationConfig.ThinkingConfig.IncludeThoughts = b;
+                            } else if (bool.TryParse(includeThoughts.ToString(), out var b2))
+                            {
+                                request.GenerationConfig.ThinkingConfig.IncludeThoughts = b2;
+                            }
+                        }
+
+                        if (thinkingConfigDict.TryGetValue("ThinkingBudget", out var thinkingBudget))
+                        {
+                            if (thinkingBudget is int i)
+                            {
+                                request.GenerationConfig.ThinkingConfig.ThinkingBudget = i;
+                            } else if (int.TryParse(thinkingBudget.ToString(), out var i2))
+                            {
+                                request.GenerationConfig.ThinkingConfig.ThinkingBudget = i2;
+                            }
+                        }
+                    }
+                }
+
                 if (options.Tools is { } aiTools)
                 {
                     foreach (var tool in aiTools)
@@ -103,7 +145,13 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
                         switch (tool)
                         {
                             case mea.AIFunction aif:
-                                // TODO: Handle AIFunction
+                                (request.Tools ??= []).Add(new Tool() { FunctionDeclarations = [new FunctionDeclaration
+                                {
+                                    Name = aif.Name,
+                                    Description = aif.Description,
+                                    Parameters = Schema.FromJsonElement(aif.JsonSchema),
+                                    Response = aif.ReturnJsonSchema is { } rj ? Schema.FromJsonElement(rj) : null,
+                                }]});
                                 break;
 
                             case mea.HostedWebSearchTool wst:
@@ -254,13 +302,55 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
         private static mea.ChatMessage ToChatMessage(GenerateContentResponse response)
         {
             var contents = new List<mea.AIContent>();
-            if (response.Text?.Length > 0)
-                contents.Add(new mea.TextContent(response.Text));
+            Candidate? candidate = response.Candidates?.FirstOrDefault();
+            if (candidate?.Content is not null)
+            {
+                foreach (Part part in candidate.Content.Parts) {
+                    if (!string.IsNullOrEmpty(part.Text))
+                        contents.Add(new mea.TextContent(part.Text));
+                    else if (!string.IsNullOrEmpty(part.InlineData?.Data))
+                        contents.Add(new mea.DataContent(Encoding.UTF8.GetBytes(part.InlineData.Data), part.InlineData.MimeType));
+                    else if (!string.IsNullOrEmpty(part.FileData?.FileUri))
+                        contents.Add(new mea.DataContent(part.FileData.FileUri, part.FileData.MimeType));
+                    else if (part.FunctionCall != null)
+                        contents.Add(ConvertFunctionCall(part.FunctionCall));
+                    else if (part.FunctionResponse is not null)
+                        contents.Add(ConvertFunctionResponse(part.FunctionResponse));
+                    else Console.WriteLine($"WARNING: Part is not a string, inline data, or function call: {part.GetType()}");
+                }
+            }
 
             return new mea.ChatMessage(ToAbstractionRole(response.Candidates?.FirstOrDefault()?.Content?.Role), contents)
             {
                 RawRepresentation = response
             };
+        }
+
+        private static mea.FunctionCallContent ConvertFunctionCall(FunctionCall functionCall)
+        {
+            IDictionary<string, object?>? arguments = null;
+            if (functionCall.Args is IReadOnlyDictionary<string, object?> a1)
+                arguments = a1.ToDictionary(x => x.Key, x => x.Value);
+            else if (functionCall.Args is IReadOnlyDictionary<string, object> a2)
+                arguments = a2.ToDictionary(x => x.Key, x => x.Value);
+            else if (functionCall.Args is JsonElement je)
+            {
+                try
+                {
+                    arguments = je.Deserialize<IDictionary<string, object?>>();
+                }
+                catch (JsonException ex)
+                {
+                    Console.WriteLine($"WARNING: Failed to deserialize function call arguments: {ex.Message}");
+                }
+            }
+            else Console.WriteLine($"WARNING: FunctionCall.Args is not a dictionary: {functionCall.Args?.GetType()}");
+            return new mea.FunctionCallContent(functionCall.Id ?? Guid.NewGuid().ToString(), functionCall.Name, arguments);
+        }
+
+        private static mea.FunctionResultContent ConvertFunctionResponse(FunctionResponse functionResponse)
+        {
+            return new mea.FunctionResultContent(functionResponse.Id!, functionResponse.Response);
         }
 
         /// <summary>
