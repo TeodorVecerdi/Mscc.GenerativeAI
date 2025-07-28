@@ -1,7 +1,6 @@
 #if NET472_OR_GREATER || NETSTANDARD2_0
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Net.Http;
 using System.Security.Authentication;
 using System.Text.Json;
@@ -10,7 +9,6 @@ using System.Threading.Tasks;
 using System.Threading;
 #endif
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Reflection;
@@ -25,7 +23,8 @@ namespace Mscc.GenerativeAI
         protected const string BaseUrlVertexAi = "https://{region}-aiplatform.googleapis.com/{version}/projects/{projectId}/locations/{region}";
 
         protected readonly string _publisher = "google";
-        protected readonly JsonSerializerOptions _options;
+        protected readonly JsonSerializerOptions _readOptions;
+        protected readonly JsonSerializerOptions _writeOptions;
 
         protected string _model;
         protected string? _apiKey;
@@ -181,7 +180,8 @@ namespace Mscc.GenerativeAI
             _defaultApiClientHeader = new KeyValuePair<string, string>(
                 "x-goog-api-client",
                 _defaultUserAgent.ToString());
-            _options = DefaultJsonSerializerOptions();
+            _readOptions = DefaultReadJsonSerializerOptions();
+            _writeOptions = DefaultWriteJsonSerializerOptions();
 
             GenerativeAIExtensions.ReadDotEnv();
             ApiKey = Environment.GetEnvironmentVariable("GOOGLE_API_KEY") ??
@@ -205,17 +205,8 @@ namespace Mscc.GenerativeAI
         public BaseModel(string? projectId = null, string? region = null,
             string? model = null, ILogger? logger = null) : this(logger)
         {
-            var credentialsFile =
-                Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS") ??
-                Environment.GetEnvironmentVariable("GOOGLE_WEB_CREDENTIALS") ??
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "gcloud",
-                    "application_default_credentials.json");
-            var credentials = GetCredentialsFromFile(credentialsFile);
-            AccessToken = _accessToken ??
-                          GetAccessTokenFromAdc();
-            ProjectId = projectId ??
-                        credentials?.ProjectId ??
-                        _projectId;
+            AccessToken = _accessToken;
+            ProjectId = projectId ?? _projectId;
             _region = region ?? _region;
             Model = model ?? _model;
         }
@@ -268,7 +259,7 @@ namespace Mscc.GenerativeAI
         /// <returns></returns>
         protected string Serialize<T>(T request)
         {
-            var json = JsonSerializer.Serialize(request, _options);
+            var json = JsonSerializer.Serialize(request, _writeOptions);
 
             Logger.LogJsonRequest(json);
 
@@ -288,9 +279,9 @@ namespace Mscc.GenerativeAI
             Logger.LogJsonResponse(json);
 
 #if NET472_OR_GREATER || NETSTANDARD2_0
-            return JsonSerializer.Deserialize<T>(json, _options);
+            return JsonSerializer.Deserialize<T>(json, _readOptions);
 #else
-            return await response.Content.ReadFromJsonAsync<T>(_options);
+            return await response.Content.ReadFromJsonAsync<T>(_readOptions);
 #endif
         }
 
@@ -298,7 +289,7 @@ namespace Mscc.GenerativeAI
         /// Get default options for JSON serialization.
         /// </summary>
         /// <returns>default options for JSON serialization.</returns>
-        private JsonSerializerOptions DefaultJsonSerializerOptions()
+        private JsonSerializerOptions DefaultWriteJsonSerializerOptions()
         {
             var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
             {
@@ -312,6 +303,7 @@ namespace Mscc.GenerativeAI
                 PropertyNameCaseInsensitive = true,
                 ReadCommentHandling = JsonCommentHandling.Skip,
                 AllowTrailingCommas = true,
+                UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip,
 #if NET9_0_OR_GREATER
                 RespectNullableAnnotations = true
 #endif
@@ -321,122 +313,29 @@ namespace Mscc.GenerativeAI
 
             return options;
         }
-
-        /// <summary>
-        /// Get credentials from specified file.
-        /// </summary>
-        /// <remarks>This would usually be the secret.json file from Google Cloud Platform.</remarks>
-        /// <param name="credentialsFile">File with credentials to read.</param>
-        /// <returns>Credentials read from file.</returns>
-        private Credentials? GetCredentialsFromFile(string credentialsFile)
+        private JsonSerializerOptions DefaultReadJsonSerializerOptions()
         {
-            Credentials? credentials = null;
-            if (File.Exists(credentialsFile))
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
             {
-                var options = DefaultJsonSerializerOptions();
-                options.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
-                using var stream = new FileStream(credentialsFile, FileMode.Open, FileAccess.Read);
-                credentials = JsonSerializer.Deserialize<Credentials>(stream, options);
-            }
+#if DEBUG
+                WriteIndented = true,
+#endif
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+                DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower,
+                NumberHandling = JsonNumberHandling.AllowReadingFromString,
+                PropertyNameCaseInsensitive = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true,
+                UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip,
+#if NET9_0_OR_GREATER
+                RespectNullableAnnotations = true
+#endif
+            };
+            options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper));
+            options.Converters.Add(new DateTimeFormatJsonConverter());
 
-            return credentials;
-        }
-
-        /// <summary>
-        /// This method uses the gcloud command-line tool to retrieve an access token from the Application Default Credentials (ADC).
-        /// It is specific to Google Cloud Platform and allows easy authentication with the Gemini API on Google Cloud.
-        /// Reference: https://cloud.google.com/docs/authentication 
-        /// </summary>
-        /// <returns>The access token.</returns>
-        private string GetAccessTokenFromAdc()
-        {
-            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-            {
-                return RunExternalExe("cmd.exe", "/c gcloud auth application-default print-access-token").TrimEnd();
-            }
-            else
-            {
-                return RunExternalExe("gcloud", "auth application-default print-access-token").TrimEnd();
-            }
-        }
-
-        /// <summary>
-        /// Run an external application as process in the underlying operating system, if possible.
-        /// </summary>
-        /// <param name="filename">The command or application to run.</param>
-        /// <param name="arguments">Optional arguments given to the application to run.</param>
-        /// <returns>Output from the application.</returns>
-        /// <exception cref="Exception"></exception>
-        private string RunExternalExe(string filename, string arguments)
-        {
-            var process = new Process();
-            var stdOutput = new StringBuilder();
-            var stdError = new StringBuilder();
-
-            process.StartInfo.FileName = filename;
-            if (!string.IsNullOrEmpty(arguments))
-            {
-                process.StartInfo.Arguments = arguments;
-            }
-
-            process.StartInfo.CreateNoWindow = true;
-            process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
-            process.StartInfo.UseShellExecute = false;
-
-            process.StartInfo.RedirectStandardError = true;
-            process.StartInfo.RedirectStandardOutput = true;
-            // Use AppendLine rather than Append since args.Data is one line of output, not including the newline character.
-            process.OutputDataReceived += (sender, args) => stdOutput.AppendLine(args.Data);
-            process.ErrorDataReceived += (sender, args) => stdError.AppendLine(args.Data);
-
-            try
-            {
-                process.Start();
-                process.BeginOutputReadLine();
-                process.WaitForExit();
-            }
-            catch (Exception e)
-            {
-                Logger.LogRunExternalExe("OS error while executing " + Format(filename, arguments) + ": " + e.Message);
-                return string.Empty;
-            }
-
-            if (process.ExitCode == 0)
-            {
-                return stdOutput.ToString();
-            }
-            else
-            {
-                var message = new StringBuilder();
-
-                if (stdError.Length > 0)
-                {
-                    message.AppendLine("Err output:");
-                    message.AppendLine(stdError.ToString());
-                }
-
-                if (stdOutput.Length != 0)
-                {
-                    message.AppendLine("Std output:");
-                    message.AppendLine(stdOutput.ToString());
-                }
-
-                throw new Exception(Format(filename, arguments) + " finished with exit code = " + process.ExitCode +
-                                    ": " + message);
-            }
-        }
-
-        /// <summary>
-        /// Formatting string for logging purpose.
-        /// </summary>
-        /// <param name="filename">The command or application to run.</param>
-        /// <param name="arguments">Optional arguments given to the application to run.</param>
-        /// <returns>Formatted string containing parameter values.</returns>
-        private string Format(string filename, string? arguments)
-        {
-            return "'" + filename +
-                   ((string.IsNullOrEmpty(arguments)) ? string.Empty : " " + arguments) +
-                   "'";
+            return options;
         }
 
         /// <summary>
@@ -472,7 +371,6 @@ namespace Mscc.GenerativeAI
             CancellationToken cancellationToken = default,
             HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
         {
-            Console.WriteLine($"Sending request: {request.Method} {request.RequestUri}");
             // Add auth headers specific to this request
             AddApiKeyHeader(request);
             AddAccessTokenHeader(request);
