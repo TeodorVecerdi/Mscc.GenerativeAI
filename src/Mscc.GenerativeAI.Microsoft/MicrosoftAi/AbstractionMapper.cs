@@ -60,7 +60,6 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
                         case mea.FunctionCallContent fcc:
                             c.Parts.Add(new FunctionCall() { Id = fcc.CallId, Name = fcc.Name, Args = fcc.Arguments });
                             functionNames[fcc.CallId] = fcc.Name;
-                            Console.WriteLine($"Added function call with ID {fcc.CallId}: {fcc.Name}");
                             break;
 
                         case mea.FunctionResultContent frc:
@@ -68,10 +67,8 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
                             if (functionNames.TryGetValue(frc.CallId, out var name))
                             {
                                 functionName = name;
-                                Console.WriteLine($"Found function name for call ID {frc.CallId}: {functionName}");
                             }
                             c.Parts.Add(new FunctionResponse() { Id = frc.CallId, Name = functionName, Response = frc.Result });
-                            Console.WriteLine($"Added function response with ID {frc.CallId}: {functionName}, {frc.Result}");
                             break;
                     }
                 }
