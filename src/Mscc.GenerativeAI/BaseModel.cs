@@ -321,8 +321,8 @@ namespace Mscc.GenerativeAI
                 WriteIndented = true,
 #endif
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-                DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                DictionaryKeyPolicy = JsonNamingPolicy.CamelCase,
                 NumberHandling = JsonNumberHandling.AllowReadingFromString,
                 PropertyNameCaseInsensitive = true,
                 ReadCommentHandling = JsonCommentHandling.Skip,
