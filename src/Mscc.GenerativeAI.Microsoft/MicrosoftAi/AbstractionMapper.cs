@@ -137,18 +137,19 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
 
                 if (options.Tools is { } aiTools)
                 {
+                    var functionDeclarations = new List<FunctionDeclaration>();
                     foreach (var tool in aiTools)
                     {
                         switch (tool)
                         {
                             case mea.AIFunction aif:
-                                (request.Tools ??= []).Add(new Tool() { FunctionDeclarations = [new FunctionDeclaration
+                                functionDeclarations.Add(new FunctionDeclaration
                                 {
                                     Name = aif.Name,
                                     Description = aif.Description,
                                     Parameters = Schema.FromJsonElement(aif.JsonSchema),
                                     Response = aif.ReturnJsonSchema is { } rj ? Schema.FromJsonElement(rj) : null,
-                                }]});
+                                });
                                 break;
 
                             case mea.HostedWebSearchTool wst:
@@ -160,6 +161,9 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
                                 break;
                         }
                     }
+
+                    if (functionDeclarations.Count > 0)
+                        (request.Tools ??= []).Add(new Tool() { FunctionDeclarations = functionDeclarations });
 
                     switch (options.ToolMode)
                     {
@@ -180,7 +184,7 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
                             request.ToolConfig ??= new();
                             request.ToolConfig.FunctionCallingConfig ??= new();
                             request.ToolConfig.FunctionCallingConfig.Mode = FunctionCallingConfigMode.Any;
-                            if (rctm.RequiredFunctionName is string name)
+                            if (rctm.RequiredFunctionName is { } name)
                             {
                                 (request.ToolConfig.FunctionCallingConfig.AllowedFunctionNames ??= []).Add(name);
                             }
