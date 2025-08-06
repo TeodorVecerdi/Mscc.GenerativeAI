@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 #endif
 using Json.Schema;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using mea = Microsoft.Extensions.AI;
@@ -68,6 +69,13 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
                             {
                                 functionName = name;
                             }
+
+                            // If we receive a JsonElement that is not an object, wrap it in an object { "result": jsonElement }
+                            if (frc.Result is JsonElement je && je.ValueKind != JsonValueKind.Object)
+                            {
+                                frc.Result = WrapInObject(je);
+                            }
+
                             c.Parts.Add(new FunctionResponse() { Id = frc.CallId, Name = functionName, Response = frc.Result });
                             break;
                     }
@@ -194,6 +202,20 @@ namespace Mscc.GenerativeAI.Microsoft.MicrosoftAi
             }
 
             return request;
+
+            static JsonElement WrapInObject(JsonElement jsonElement, string key = "result")
+            {
+                using MemoryStream stream = new();
+                using Utf8JsonWriter writer = new(stream);
+
+                writer.WriteStartObject();
+                writer.WritePropertyName(key);
+                jsonElement.WriteTo(writer);
+                writer.WriteEndObject();
+                writer.Flush();
+
+                return JsonDocument.Parse(stream.ToArray()).RootElement.Clone();
+            }
         }
 
         /// <summary>
