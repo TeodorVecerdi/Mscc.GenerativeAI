@@ -534,7 +534,7 @@ namespace Mscc.GenerativeAI.Microsoft
 
 			if (options.AdditionalProperties?.Any() ?? false)
 			{
-				var retry = new Retry();
+				var retry = new Retry { Initial = 0 };
 				TimeSpan? timeout = null;
 				TryAddOption<int?>(options, "RetryInitial", v => retry.Initial = v ?? retry.Initial);
 				TryAddOption<int?>(options, "RetryMultiplies", v => retry.Multiplies = v ?? retry.Multiplies);
