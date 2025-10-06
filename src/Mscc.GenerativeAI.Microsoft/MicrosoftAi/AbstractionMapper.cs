@@ -140,9 +140,10 @@ namespace Mscc.GenerativeAI.Microsoft
 							}
 
 							// If we receive anything other than a JsonElement that is an object, wrap it in an object { "result": jsonElement }
-							if (frc.Result is not JsonElement { ValueKind: JsonValueKind.Object })
+							var functionResult = frc.Result;
+							if (functionResult is not JsonElement { ValueKind: JsonValueKind.Object })
 							{
-								frc.Result = WrapInObject(frc.Result);
+								functionResult = WrapInObject(functionResult);
 							}
 
 							part = new Part
@@ -151,7 +152,7 @@ namespace Mscc.GenerativeAI.Microsoft
 								{
 									Id = frc.CallId, 
 									Name = functionName, 
-									Response = frc.Result
+									Response = functionResult,
 								}
 							};
 							break;
